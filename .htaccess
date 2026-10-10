@@ -1,0 +1,10 @@
+# Serve this Laravel app from /CURA/ without requiring /CURA/public/ in the
+# URL. Standard subdirectory-hosting rewrite: cPanel shared hosting typically
+# can't have its document root pointed at CURA/public directly, so this
+# forwards every request under /CURA/ into the public/ front controller,
+# which then applies its own rewrite rules from public/.htaccess.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !^/CURA/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

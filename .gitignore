@@ -1,0 +1,63 @@
+# Environment files: never committed, in any form.
+# This covers .env, .env.example, .env.local, .env.production, .env.backup,
+# env.local, env.example, anything ending in .env, and env/ folders.
+.env
+.env.*
+*.env
+env
+env.*
+.env/
+env/
+.envrc
+
+# Dependencies
+/vendor/
+/node_modules/
+npm-debug.log
+yarn-error.log
+
+# Laravel Storage & Cache
+/storage/app/public/*
+!/storage/app/public/.gitignore
+/storage/framework/cache/data/*
+!/storage/framework/cache/data/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+/storage/*.key
+/storage/pail
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+!/bootstrap/cache/packages.php
+!/bootstrap/cache/services.php
+
+# Public build assets
+/public/build
+/public/hot
+/public/storage
+
+# Logs & Tests
+*.log
+.phpunit.result.cache
+/.phpunit.cache
+phpunit.xml
+
+# IDEs & System
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+/.fleet
+/.idea
+/.nova
+/.vscode
+/.zed
+.phpactor.json
+/auth.json
+Homestead.json
+Homestead.yaml

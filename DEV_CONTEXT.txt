@@ -1,0 +1,695 @@
+================================================================================
+  CURA — DEVELOPER CONTEXT FILE
+  Last read: 2026-07-29 | Framework: Laravel 12 | PHP ^8.2
+================================================================================
+
+TABLE OF CONTENTS
+  1. What Is This Project?
+  2. Tech Stack & Dependencies
+  3. Project Structure
+  4. Database & Models
+  5. Authentication & SSO
+  6. Routing
+  7. Controllers Overview
+  8. Business Logic & Financial Flow
+  9. Known Gotchas & Technical Debt
+  10. Environment Setup
+  11. Key File Map (quick reference)
+
+================================================================================
+1. WHAT IS THIS PROJECT?
+================================================================================
+
+CURA is a healthcare marketplace/pharmacy reservation platform that lives as a
+SUB-APP inside a larger platform called "Valu" (valu.com.ng).
+
+Core concept:
+  - Patients (users with role='patient') search for medications across
+    registered pharmacies, see masked results, then PAY to "reveal" the pharmacy
+    details + lock a reservation slot (like a paid lead-gen model).
+  - Vendors (users with role='vendor') are pharmacists/hospitals who manage their
+    inventory, respond to reservations, and get paid out via their Valu wallet.
+
+The parent platform "Valu" (located at ../../ relative to this Laravel app) is a
+plain PHP app. CURA is a Laravel 12 app mounted at /CURA/ on the same server.
+They share the same MySQL database.
+
+================================================================================
+2. TECH STACK & DEPENDENCIES
+================================================================================
+
+  Backend:  Laravel 12 (PHP ^8.2)
+  Database: MySQL in production (shared with Valu parent app)
+            SQLite for local dev (database/database.sqlite)
+  Frontend: Blade templates, vanilla CSS, vanilla JS (no framework)
+  Build:    Vite (npm run dev / npm run build)
+  Auth:     Laravel's built-in Auth + custom SSO bridge (see section 5)
+  Queues:   Database driver (queue:listen)
+  Sessions: Database driver
+
+No API-only backend. No React/Vue. Everything is server-rendered Blade.
+
+Third-party packages (composer.json):
+  - laravel/framework ^12.0
+  - laravel/tinker ^2.10.1
+  (No additional non-standard packages beyond the default Laravel scaffold)
+
+================================================================================
+3. PROJECT STRUCTURE
+================================================================================
+
+app/
+  Http/
+    Controllers/
+      AuthController.php           - Login, logout, SSO bridge
+      DashboardController.php      - Patient dashboard
+      DashboardController.php      - (shared base, not API)
+      HistoryController.php        - Patient order history
+      InventoryImportController.php- CSV import for vendor inventory
+      OnboardingController.php     - (legacy, now inline in routes)
+      PharmacyController.php       - Public pharmacy directory
+      ProfileController.php        - Shared profile controller (user & vendor)
+      ReservationController.php    - Patient reservation flow
+      SearchController.php         - Medication search, map, watchlist
+
+      Api/
+        ChatApiController.php      - REST endpoints for real-time chat polling
+
+      User/
+        ChatController.php         - Patient chat (conversations)
+
+      Vendor/
+        BillingController.php      - Billing page for vendors
+        BroadcastController.php    - Vendor broadcasts to followers
+        ChatController.php         - Vendor chat (conversations)
+        DashboardController.php    - Vendor dashboard
+        DispatchController.php     - Dispatch / delivery management
+        InventoryController.php    - CRUD for medications
+        InventoryImportController.php - CSV import (vendor namespace)
+        NotificationController.php - Vendor notification management
+        OnboardingController.php   - Vendor pharmacy profile creation
+        ReportController.php       - Sales & stock analytics
+        ReservationController.php  - Vendor-side reservation management
+
+  Models/
+    Broadcast.php
+    Conversation.php
+    Delivery.php
+    Medication.php
+    Message.php
+    Notification.php
+    Pharmacy.php
+    RecentSearch.php
+    Reservation.php
+    User.php
+    Wallet.php
+    WalletTransaction.php
+    Watchlist.php
+
+resources/views/
+  welcome.blade.php          - Public landing page
+  about.blade.php            - About page
+  pricing.blade.php          - Pricing page
+  search.blade.php           - Search input page
+  results.blade.php          - Search results (medications, masked pharmacies)
+  map.blade.php              - Map view of pharmacies/meds
+  pharmacies.blade.php       - Public pharmacy directory
+  login.blade.php            - (legacy, now redirects to ../../auth/login.php)
+  register.blade.php         - (legacy, now redirects to ../../auth/signup.php)
+
+  user-dashboard/
+    dashboard.blade.php      - Patient home
+    reservation.blade.php    - Patient's active reservations
+    checkout.blade.php       - Checkout/payment confirmation
+    history.blade.php        - Past orders
+    watchlist.blade.php      - Medication watchlist (OOS alerts)
+    pharmacies.blade.php     - Saved pharmacies
+    chat.blade.php           - Patient chat list
+    chat-show.blade.php      - Patient chat thread
+    notifications.blade.php  - Notification list
+    preferences.blade.php    - Notification preferences
+    profile.blade.php        - Patient profile editor
+    help.blade.php           - Help page
+    logout.blade.php         - Post-logout page
+
+  vendor-dashboard/
+    dashboard.blade.php      - Vendor home
+    inventory.blade.php      - Stock management
+    reservations.blade.php   - Order management
+    chat.blade.php           - Vendor chat list
+    chat-show.blade.php      - Vendor chat thread
+    notifications.blade.php  - Vendor notifications
+    broadcast.blade.php      - Send broadcasts to followers
+    billing.blade.php        - Billing overview
+    reports.blade.php        - Analytics & charts
+    profile.blade.php        - Vendor profile editor
+    onboarding.blade.php     - First-time pharmacy setup
+    dispatch.blade.php       - Dispatch view
+
+routes/
+  web.php                    - All routes (web + inline API group)
+  console.php                - Scheduler stubs
+
+================================================================================
+4. DATABASE & MODELS
+================================================================================
+
+DATABASE: Shared MySQL database with the parent Valu app. In local dev,
+SQLite is used (database/database.sqlite).
+
+IMPORTANT: The users table, wallets table, and transactions table are all
+OWNED by the Valu parent app. CURA reads/writes to them but doesn't own
+their schema. There are inline ALTER TABLE statements scattered across
+controllers to handle schema drift on cPanel (see section 9).
+
+---- USERS TABLE (owned by Valu) ----
+Key columns that CURA cares about:
+  id, full_name, email, phone,
+  cura_role  (mapped to 'role' via Eloquent accessor in User model)
+  password_hash (mapped to 'password' for Laravel Auth via getAuthPassword())
+  pin_hash   (mapped to 'transaction_pin' via accessor)
+  wallet_balance
+  notification_settings (JSON column)
+
+The User model uses custom attribute accessors/mutators to map Laravel's
+expected field names to the Valu DB column names:
+  $user->name           -> reads from full_name
+  $user->role           -> reads from cura_role
+  $user->transaction_pin -> reads from pin_hash
+
+password_hash is cast as 'hashed' — so setting $user->password = '...' will
+auto-hash it. However, password updates in ProfileController manually call
+Hash::make() and write to 'password' (which maps to 'password_hash').
+
+---- WALLETS TABLE (owned by Valu) ----
+  id, user_id, balance, account_number, bank_name
+
+There are TWO sources of truth for wallet balance: users.wallet_balance AND
+wallets.balance. CURA keeps them in sync via User::addBalance() and
+User::deductBalance() which write to BOTH tables atomically.
+
+---- TRANSACTIONS TABLE (owned by Valu) ----
+WalletTransaction model uses $table = 'transactions' and timestamps = false.
+CURA creates records here manually with created_at/updated_at passed as data.
+
+---- PHARMACIES TABLE ----
+  id, user_id, name, type (pharmacy|hospital), address, city, state,
+  license_number (unique), phone, email,
+  latitude, longitude,
+  is_verified (boolean), verification_status (unverified|pending|verified),
+  operating_hours (text), services (JSON), logo
+
+  Relationships:
+    belongs_to User (owner/vendor)
+    has_many Medication
+    belongs_to_many User via saved_pharmacies (followers)
+
+---- MEDICATIONS TABLE ----
+  id, pharmacy_id, name, description, price, stock_level,
+  low_stock_threshold, expiry_date, dosage, category, photo
+
+  Relationships:
+    belongs_to Pharmacy
+    has_many Reservation
+
+---- RESERVATIONS TABLE ----
+  id, user_id, medication_id, quantity, status, is_paid,
+  patient_charge, vendor_commission, expires_at, pickup_code
+
+  Status values: pending | confirmed | ready | cancelled | dispatched |
+                 delivered | picked_up
+
+  Relationships:
+    belongs_to User
+    belongs_to Medication
+
+---- CONVERSATIONS TABLE ----
+  id, reservation_id, user_id, pharmacy_id
+
+  Relationships:
+    belongs_to Reservation, User, Pharmacy
+    has_many Message
+    has_one Message (latestMessage, via latestOfMany())
+
+---- MESSAGES TABLE ----
+  id, conversation_id, sender_id, body (or content?), is_read
+
+---- NOTIFICATIONS TABLE ----
+  id, user_id, type, title, message, read_at
+
+---- WATCHLISTS TABLE ----
+  id, user_id, medication_id, pharmacy_id, notify_on_restock
+
+---- BROADCASTS TABLE ----
+  id, pharmacy_id, title, message, type (general|stock|emergency),
+  target_audience, recipients_count
+
+---- CURA_SSO_TOKENS TABLE (owned by Valu) ----
+  id, token, user_id, role, expires_at
+  (CURA only reads from this — Valu writes to it on login)
+
+---- SAVED_PHARMACIES TABLE (pivot) ----
+  user_id, pharmacy_id
+  (Used for saved/followed pharmacies)
+
+---- RECENT_SEARCHES TABLE ----
+  id, user_id, query
+
+================================================================================
+5. AUTHENTICATION & SSO
+================================================================================
+
+CURA does NOT have its own login page in the traditional sense. Auth flow:
+
+1. User goes to ../../auth/login.php (Valu's PHP login page)
+2. On success, Valu creates a one-time token in `cura_sso_tokens` table
+3. Valu redirects to /bridge?sso={token}
+4. AuthController::bridge() validates token, deletes it, finds User, logs them
+   in via Auth::login(), and redirects based on role.
+
+Login route (/login) and register route (/register) both redirect AWAY to the
+Valu PHP auth pages using redirect()->away('../../auth/login.php').
+
+Logout (/logout POST) calls Auth::logout() and redirects to ../../auth/logout.php.
+
+Role system: 'patient' or 'vendor'. Stored in users.cura_role column.
+Vendor role check: if($user->role === 'vendor')
+
+Switching a normal user into a pharmacy account inside CURA:
+  - CURA does not provide a separate "switch account" button. The user must be
+    promoted to the vendor role and then pass through the pharmacy onboarding
+    flow.
+  - In the CURA UI, the login screen has a role selector (Patient / Pharmacist).
+    That selector is enforced by the backend: selecting Pharmacist only works
+    if the user's stored role in CURA is already 'vendor'.
+  - The intended in-app path is: log in with the existing account, then visit
+    /vendor/onboarding. The onboarding flow updates the user's CURA role to
+    'vendor' and creates the pharmacy profile. After that, the user is routed
+    to the vendor dashboard.
+  - If the role needs to be changed outside the UI, the underlying requirement is
+    the same: the user must have cura_role = 'vendor' in the shared users table.
+    After the role is updated, the next SSO/login cycle will route them into the
+    vendor onboarding or vendor dashboard flow.
+
+After SSO bridge:
+  - vendor without pharmacy -> redirect to vendor.onboarding
+  - vendor with pharmacy -> redirect to vendor.dashboard
+  - patient -> redirect to user.dashboard
+
+================================================================================
+6. ROUTING (routes/web.php)
+================================================================================
+
+Public routes (no auth):
+  GET  /                       -> welcome view
+  GET  /about                  -> about view
+  GET  /pricing                -> pricing view
+  GET  /search                 -> SearchController@index
+  GET  /results                -> SearchController@index (same controller)
+  GET  /pharmacies             -> PharmacyController@directory
+  GET  /login                  -> redirect to Valu login
+  GET  /register               -> redirect to Valu register
+  GET  /bridge                 -> AuthController@bridge (SSO entry)
+  POST /logout                 -> AuthController@logout
+  GET  /clear-cache            -> runs optimize:clear + schema check
+  GET  /migrate                -> runs php artisan migrate
+
+User (auth) routes — prefix: /user/
+  GET  /dashboard
+  GET  /map
+  GET  /reservation
+  GET  /checkout
+  POST /reservation
+  DELETE /reservation/{id}
+  GET  /pharmacies
+  POST /pharmacies/{id}/toggle
+  GET  /history
+  GET  /notifications
+  POST /notifications/mark-read
+  DELETE /notifications/{id}
+  GET  /notifications/preferences
+  POST /notifications/preferences
+  GET  /watchlist
+  POST /watchlist/toggle
+  DELETE /watchlist/{id}
+  GET  /help
+  GET  /profile
+  PATCH /profile
+  PUT  /profile/password
+  PUT  /profile/pin
+  GET  /chat
+  POST /chat/create
+  GET  /chat/{conversation}
+  POST /chat/{conversation}
+
+Vendor (auth) routes — prefix: /vendor/
+  GET  /dashboard
+  GET  /inventory
+  POST /inventory
+  PUT  /inventory/{id}
+  POST /inventory/{id}/adjust
+  POST /inventory/import
+  DELETE /inventory/{id}
+  GET  /reservations
+  POST /reservations/{id}/status
+  POST /reservations/{id}/quick
+  POST /reservations/{id}/fulfill
+  POST /reservations/bulk
+  GET  /chat
+  GET  /chat/{conversation}
+  POST /chat/{conversation}
+  GET  /notifications
+  POST /notifications/read
+  DELETE /notifications/{id}
+  GET  /broadcasts
+  POST /broadcasts
+  GET  /billing
+  GET  /reports
+  GET  /profile
+  PATCH /profile
+  PUT  /profile/password
+  POST /profile/verify
+  GET  /onboarding             (inline closure — auto-fixes schema)
+  POST /onboarding             (inline closure — creates Pharmacy)
+
+API routes (auth, prefix: /api/) — used for chat polling:
+  GET  /chat/{conversation}/messages
+  GET  /chat/unread-count
+  POST /chat/{conversation}/mark-read
+  GET  /notifications/unread-count
+
+NOTE: There is NO separate api.php routes file. All "API" routes are in web.php
+under an /api prefix group.
+
+================================================================================
+7. CONTROLLERS OVERVIEW
+================================================================================
+
+AuthController
+  bridge()     - SSO token validation and login
+  showLogin()  - (legacy, redirects)
+  login()      - (legacy, direct login, role enforcement)
+  logout()     - clears session, redirects to Valu logout
+  redirectUser() - role-based redirect helper
+
+DashboardController (patient)
+  index()                  - patient home with reservation stats, suggested meds
+  notifications()          - list user notifications
+  markNotificationsRead()  - mark all as read
+  deleteNotification($id)
+  showPreferences()        - notification settings form
+  savePreferences()        - save notification settings
+
+Vendor/DashboardController
+  index() - dashboard with KPIs: pending count, low stock, today's revenue,
+            financial snapshot, latest reservations, unread messages
+            ALSO does inline ALTER TABLE for missing columns (cPanel workaround)
+
+ReservationController (patient)
+  index()    - list all user reservations
+  checkout() - show payment confirmation form (checks for existing reservation)
+  store()    - handles the "Pay to Reveal" flow (see section 8)
+  destroy()  - cancel a reservation (only pending/ready states)
+
+Vendor/ReservationController
+  index()       - paginated list with status filter + search
+  updateStatus()  - generic status update
+  quickAction()   - confirm/ready/cancel/pickup shortcut
+  fulfill()       - verify pickup code + stock deduction + payout
+  bulkUpdate()    - batch status update
+
+Vendor/InventoryController
+  index()      - list all medications for pharmacy
+  store()      - add medication (with photo upload to storage/public)
+  update()     - edit medication, triggers low stock notification if needed
+  adjustStock() - increment/decrement stock, triggers critical stock notification
+  destroy()    - soft delete medication
+
+SearchController
+  index()           - search medications by name/category/description
+  map()             - map view, returns pharmacies + filtered meds
+  show()            - (stub, not wired up in routes currently)
+  watchlist()       - list user's watchlist
+  toggleWatchlist() - add/remove from watchlist
+  removeFromWatchlist($id)
+
+ProfileController (shared between user and vendor)
+  edit()              - show profile, vendor gets pharmacy data too
+  update()            - update user + pharmacy data for vendors
+  updatePassword()    - change password
+  updatePin()         - change transaction PIN (4-digit numeric)
+  requestVerification() - vendor requests facility verification
+
+Vendor/BroadcastController
+  index()  - list broadcasts, show follower count
+  store()  - create broadcast + dispatch notifications to all followers
+
+Vendor/ReportController
+  index()  - sales trend (7 days), top 5 meds, category distribution, summaries
+
+Vendor/BillingController
+  index()  - billing page (stub/basic implementation)
+
+Vendor/ChatController, User/ChatController
+  index()  - list conversations
+  show()   - show messages in a conversation
+  store()  - send a new message
+  (User) create() - start a new conversation
+
+Api/ChatApiController
+  getMessages()                - paginated messages for a conversation
+  getUnreadCount()             - unread message count
+  markAsRead()                 - mark conversation messages as read
+  getUnreadNotificationsCount() - unread notifications count
+
+================================================================================
+8. BUSINESS LOGIC & FINANCIAL FLOW
+================================================================================
+
+---- THE "PAY TO REVEAL" MODEL ----
+The core product idea: medications are listed but the pharmacy is hidden.
+Patients pay a small fee to reveal the pharmacy and lock a reservation.
+
+  1. Patient searches for a medication
+  2. Sees results with masked pharmacy info
+  3. Clicks to checkout -> checkout page shows:
+       patient_charge = medication.price * 0.025  (2.5% fee)
+       total_cost = price + patient_charge
+  4. Patient enters 4-digit transaction PIN to confirm
+  5. If PIN valid + wallet balance sufficient:
+       - Deducts total_cost from patient wallet (both tables)
+       - Logs WalletTransaction (type='purchase', category='cura_reservation')
+       - Creates Reservation (is_paid=true, status='pending')
+       - Generates pickup_code (e.g. CURA-XXXXXXXX)
+       - Sets expires_at = now() + 24 hours
+       - Notifies vendor (Notification record)
+       - Triggers referral commission processing (external PHP function)
+  6. Patient can now see pharmacy name, address, phone on their reservation page
+
+---- RESERVATION STATUS LIFECYCLE ----
+  pending -> confirmed -> ready -> picked_up
+  pending -> cancelled  (by patient or vendor)
+  pending -> dispatched -> delivered  (if delivery route used)
+
+---- VENDOR PAYOUT (on pickup) ----
+When vendor marks order as picked_up via quickAction() or fulfill():
+  payout_amount = medication.price - reservation.vendor_commission
+  (vendor_commission = 5% of med price, set when reservation was created)
+
+  1. Decrements medication.stock_level by 1
+  2. Adds payout_amount to vendor wallet (both tables via addBalance())
+  3. Logs WalletTransaction (type='credit', category='cura_payout')
+  4. Calls processReferralCommissions() from parent app's PHP file
+
+The fulfill() method additionally:
+  - Verifies pickup_code (case-insensitive comparison)
+  - Also processes referral for the patient side (cura_customer)
+
+---- REFERRAL COMMISSIONS ----
+Located at: base_path('../includes/referral_commissions.php')
+This is a plain PHP file in the parent Valu app. CURA requires_once it directly.
+Function signature: processReferralCommissions($pdo, $userId, $type, $amount, $ref, $desc)
+Called for both 'cura_vendor' and 'cura_customer' types.
+
+---- WALLET BALANCE (dual-table sync) ----
+User::getWalletBalanceAttribute() reads from BOTH users.wallet_balance AND
+wallets.balance, preferring wallets.balance if positive, otherwise falls back to
+users.wallet_balance.
+
+User::addBalance($amount) and deductBalance($amount) write to both tables.
+Always use these methods — never update wallet balance directly.
+
+---- NOTIFICATIONS ----
+Notification model (app/Models/Notification.php):
+  user_id, type, title, message, read_at (nullable — null = unread)
+
+Types used: 'order', 'stock', 'general', 'emergency', vendor broadcast types.
+Unread count = count where read_at IS NULL.
+
+---- BROADCASTS ----
+Vendors send broadcasts to their "followers" (users who saved the pharmacy).
+Saved pharmacies = saved_pharmacies pivot table (User belongsToMany Pharmacy).
+A notification is created for each follower.
+
+================================================================================
+9. KNOWN GOTCHAS & TECHNICAL DEBT
+================================================================================
+
+1. INLINE SCHEMA FIXES EVERYWHERE
+   Because the app was deployed on cPanel and migrations didn't always run
+   cleanly, there are inline ALTER TABLE statements scattered in:
+   - routes/web.php (onboarding closure)
+   - Vendor/DashboardController::index()
+   - ProfileController::edit() and update()
+   These check Schema::hasColumn() before ALTERing. This is messy but
+   intentional. Don't remove them without ensuring the DB is fully migrated.
+
+2. DUAL WALLET TABLE SYNC
+   wallet_balance exists in BOTH users and wallets tables.
+   Always use User::addBalance() / deductBalance() to keep them in sync.
+   Never raw-update wallet_balance without going through these methods.
+
+3. SSO-ONLY AUTH
+   The login/register routes redirect to Valu's PHP pages. There is legacy
+   login() method in AuthController but it's not wired to any route currently.
+   All real auth goes through /bridge.
+
+4. PROXIMITY IS FAKE
+   SearchController::index() assigns random proximity values to results:
+     $item->proximity = lcg_value() * 9.5 + 0.5
+   Real geolocation is not implemented for search results. The map view uses
+   pharmacy.latitude/longitude fields if populated.
+
+5. TRANSACTION TIMESTAMPS
+   WalletTransaction model has $timestamps = false. created_at and updated_at
+   must be passed manually when creating transaction records.
+
+6. VENDOR COMMISSION CALCULATION
+   vendor_commission stored on reservation = 5% of medication.price
+   BUT payout_amount = price - vendor_commission (i.e. vendor gets 95%)
+   In ReportController, revenue is calculated as vendor_commission * 10
+   which seems like a bug/workaround (may be mapping commission to a 10x scale).
+   Be cautious with financial calculations in reports.
+
+7. REFERRAL COMMISSION REQUIRE_ONCE
+   require_once base_path('../includes/referral_commissions.php')
+   This path goes UP one directory from the Laravel root (to the Valu parent).
+   If running CURA standalone (not under Valu), this will throw a fatal error
+   on order fulfillment. The code wraps vendor commissions with
+   function_exists() check but customer commissions in fulfill() do NOT have
+   this guard — they'll crash if the file is missing.
+
+8. PICKUP CODE GENERATION
+   'CURA-' . strtoupper(Str::random(8)) — 8 random chars, not guaranteed unique
+   but collision probability is low. No DB unique constraint on pickup_code.
+
+9. PHOTO STORAGE
+   Medication photos stored via $request->file('photo')->store('medications', 'public')
+   Uses Laravel's 'public' disk. Need `php artisan storage:link` to be run.
+
+10. NO MIDDLEWARE ROLE GUARD
+    Routes are protected by 'auth' middleware only. There's no vendor-specific
+    or patient-specific middleware. The redirectUser() method handles role routing
+    at login time, but a logged-in patient could technically visit /vendor/dashboard
+    and not be blocked at middleware level (they'd just see wrong data or error).
+
+11. MESSAGES MODEL
+    Messages.php is a thin model. The actual field name for message body might
+    be 'body' or 'content' — verify against the DB migration before working on chat.
+
+================================================================================
+10. ENVIRONMENT SETUP
+================================================================================
+
+Local development:
+  1. cp .env.example .env
+  2. php artisan key:generate
+  3. DB_CONNECTION=sqlite (default), database/database.sqlite exists
+  4. php artisan migrate
+  5. npm install
+  6. composer run dev   (starts server + queue + pail + vite concurrently)
+
+  OR individually:
+    php artisan serve
+    php artisan queue:listen --tries=1 --timeout=0
+    npm run dev
+
+Production (cPanel shared hosting):
+  - MySQL DB shared with Valu parent app
+  - DB credentials set in .env
+  - php artisan migrate --force
+  - npm run build (Vite production build)
+  - Storage link: php artisan storage:link
+  - Session driver: database (sessions table must exist)
+  - Queue driver: database
+
+Key env vars:
+  APP_URL          - Must match the actual subdirectory URL (e.g. https://valu.com.ng/CURA)
+  DB_CONNECTION    - 'mysql' in production
+  DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+  SESSION_DRIVER   - 'database'
+  QUEUE_CONNECTION - 'database'
+
+Helper routes for cPanel (public, unguarded — remove in prod if possible):
+  GET /clear-cache  - clears all Laravel caches
+  GET /migrate      - runs database migrations
+
+================================================================================
+11. KEY FILE MAP (QUICK REFERENCE)
+================================================================================
+
+ROUTING:
+  routes/web.php
+
+AUTH:
+  app/Http/Controllers/AuthController.php
+
+MODELS:
+  app/Models/User.php                   - custom accessors for Valu DB columns
+  app/Models/Pharmacy.php
+  app/Models/Medication.php
+  app/Models/Reservation.php
+  app/Models/Wallet.php                 - wallets table
+  app/Models/WalletTransaction.php      - transactions table, no timestamps
+  app/Models/Conversation.php
+  app/Models/Message.php
+  app/Models/Notification.php
+  app/Models/Broadcast.php
+  app/Models/Watchlist.php
+  app/Models/RecentSearch.php
+
+PATIENT FLOW:
+  app/Http/Controllers/SearchController.php
+  app/Http/Controllers/ReservationController.php
+  app/Http/Controllers/DashboardController.php
+  app/Http/Controllers/HistoryController.php
+  app/Http/Controllers/PharmacyController.php
+
+VENDOR FLOW:
+  app/Http/Controllers/Vendor/DashboardController.php
+  app/Http/Controllers/Vendor/InventoryController.php
+  app/Http/Controllers/Vendor/ReservationController.php
+  app/Http/Controllers/Vendor/BroadcastController.php
+  app/Http/Controllers/Vendor/ReportController.php
+  app/Http/Controllers/Vendor/BillingController.php
+  app/Http/Controllers/Vendor/ChatController.php
+  app/Http/Controllers/Vendor/NotificationController.php
+
+SHARED:
+  app/Http/Controllers/ProfileController.php   - handles both user & vendor
+  app/Http/Controllers/Api/ChatApiController.php
+
+MIGRATIONS:
+  database/migrations/  (22 migration files as of last read)
+
+VIEWS:
+  resources/views/user-dashboard/   - 13 blade files
+  resources/views/vendor-dashboard/ - 12 blade files
+  resources/views/                  - public/landing pages
+
+EXTERNAL DEPENDENCY (Valu parent app):
+  ../includes/referral_commissions.php   - required by reservation fulfillment
+
+================================================================================
+END OF DEV_CONTEXT.txt
+================================================================================
