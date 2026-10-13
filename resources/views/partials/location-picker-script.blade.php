@@ -11,11 +11,11 @@
             const form = picker.closest('form');
             const latitude = picker.querySelector('[data-latitude]');
             const longitude = picker.querySelector('[data-longitude]');
-            const status = picker.querySelector('[data-location-status]');
+            const status = picker.querySelector('[data-location-status] span') || picker.querySelector('[data-location-status]');
+            const search = picker.querySelector('[data-picker-search]');
             const hint = picker.querySelector('[data-map-hint]');
             const mapBox = picker.querySelector('[data-map]');
             const useButton = picker.querySelector('[data-use-location]');
-            const findButton = picker.querySelector('[data-find-address]');
             const googleCheck = picker.querySelector('[data-google-check]');
             const field = name => form.querySelector(`[data-place="${name}"]`);
 
@@ -25,7 +25,7 @@
 
             function say(message, tone) {
                 status.textContent = message;
-                status.className = 'mt-0.5 text-xs leading-5 ' + ({ good: 'text-emerald-700', bad: 'text-rose-600', busy: 'text-slate-500' }[tone] || 'text-slate-500');
+                status.className = ({ good: 'font-medium text-emerald-700', bad: 'font-medium text-rose-600', busy: 'text-slate-500' }[tone] || 'text-slate-500');
             }
 
             function busy(button, label) {
@@ -125,7 +125,7 @@
 
             useButton.addEventListener('click', () => {
                 if (!navigator.geolocation) {
-                    say('This browser cannot share a location. Use “Find the address” or tap the map instead.', 'bad');
+                    say('This browser cannot share a location. Search for the address or tap the map instead.', 'bad');
                     return;
                 }
 
@@ -138,36 +138,27 @@
                 }, problem => {
                     ready(useButton);
                     say(problem.code === 1
-                        ? 'Location is blocked for this site. Allow it in your browser, or use “Find the address”.'
-                        : 'We could not read your location. Try again, or use “Find the address”.', 'bad');
+                        ? 'Location is blocked for this site. Allow it in your browser, or search for the address.'
+                        : 'We could not read your location. Try again, or search for the address.', 'bad');
                 }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
             });
 
-            findButton.addEventListener('click', () => {
-                const typed = ['address', 'city', 'state'].map(name => field(name)?.value.trim()).filter(Boolean).join(', ');
+            // An address chosen from the suggestions, in the search box above the map or in the
+            // street address box of the form: the pin goes there and the address fields are filled in.
+            form.addEventListener('address:picked', event => {
+                const found = event.detail || {};
+                if (found.latitude === null || found.latitude === undefined) return;
 
-                if (typed.length < 3) {
-                    say('Type the street address first, then press “Find the address”.', 'bad');
-                    field('address')?.focus();
-                    return;
-                }
-
-                busy(findButton, 'Searching…');
-                say('Looking for that address on the map…', 'busy');
-
-                fetch(`${lookupUrl}?q=${encodeURIComponent(typed)}`, { headers: { Accept: 'application/json' } })
-                    .then(response => response.json().then(body => ({ ok: response.ok, body })))
-                    .then(({ ok, body }) => {
-                        ready(findButton);
-                        if (!ok) { say(body.message || 'We could not find that address.', 'bad'); return; }
-
-                        place(body.latitude, body.longitude, { fillAddress: false, move: true });
-                        if (!field('city')?.value && body.city) field('city').value = body.city;
-                        if (!field('state')?.value && body.state) field('state').value = body.state;
-                        say('Found it. Drag the pin onto the exact building if it is a little off.', 'good');
-                    })
-                    .catch(() => { ready(findButton); say('The address search is not reachable right now. Tap the map to drop the pin.', 'bad'); });
+                fill({ address: found.address || found.title, city: found.city, state: found.state });
+                place(found.latitude, found.longitude, { fillAddress: false, move: true });
+                say('Found it. Drag the pin onto the exact building if it is a little off.', 'good');
             });
+
+            // Enter in the search box must not send the whole form.
+            if (search) {
+                search.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+            }
         });
     })();
 </script>
+@include('partials.address-suggest-script')

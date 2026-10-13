@@ -15,11 +15,18 @@ return Application::configure(basePath: dirname(__DIR__))
             'vendor.only' => \App\Http\Middleware\EnsureVendorRole::class,
         ]);
 
+        // A tunnel or reverse proxy on this same machine (e.g. cloudflared)
+        // serves the site over https but talks to the app over plain http.
+        // Trusting it lets links, assets and redirects come out as https.
+        $middleware->trustProxies(at: ['127.0.0.1', '::1']);
+
         // Stops the browser back/forward cache from showing a stale page
         // after the session's authenticated user changes (staff
         // impersonation switch, logout) — see class docblock.
         $middleware->web(append: [
             \App\Http\Middleware\PreventBackHistoryCaching::class,
+            // Signs out an account that was switched off while it was signed in.
+            \App\Http\Middleware\EnsureAccountIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -17,7 +17,7 @@
 
     <div class="sm:col-span-2">
         <label for="{{ $prefix }}-address" class="mb-1.5 block text-sm font-semibold text-slate-800">Street address</label>
-        <input id="{{ $prefix }}-address" type="text" name="address" value="{{ $value('address') }}" required maxlength="255" placeholder="House number, street and area" data-place="address" class="{{ $field }}">
+        <input id="{{ $prefix }}-address" type="text" name="address" value="{{ $value('address') }}" required maxlength="255" placeholder="Start typing, then pick it from the list" data-place="address" data-address-suggest data-fill="address" data-latitude="[data-latitude]" data-longitude="[data-longitude]" data-city="[data-place=city]" data-state="[data-place=state]" class="{{ $field }}">
     </div>
     <div>
         <label for="{{ $prefix }}-city" class="mb-1.5 block text-sm font-semibold text-slate-800">City or area</label>

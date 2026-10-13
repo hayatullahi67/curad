@@ -42,7 +42,9 @@ class ProfileController extends Controller
 
         $oldEmail = $user->email;
 
-        $user->full_name = trim($data['name']);
+        $user->full_name = trim(preg_replace('/\s+/', ' ', $data['name']));
+        // The first word is the first name; the greeting and the top bar use it.
+        [$user->first_name, $user->last_name] = array_pad(explode(' ', $user->full_name, 2), 2, '');
         $user->email = Str::lower(trim($data['email']));
         $user->phone = filled($data['phone'] ?? null) ? trim($data['phone']) : null;
         $user->save();

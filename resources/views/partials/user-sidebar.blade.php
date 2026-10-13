@@ -69,7 +69,7 @@
                             @csrf
                             <button type="submit" class="w-full group flex items-center px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl transition-all duration-200">
                                 <i class="fas fa-shop mr-3.5 w-5 text-center text-base text-gray-400 group-hover:text-gray-600"></i>
-                                {{ $ownsPharmacy ? 'Back to my pharmacy' : 'Sell on CuraD' }}
+                                {{ $ownsPharmacy ? 'Back to my pharmacy' : 'Register my pharmacy' }}
                             </button>
                         </form>
                         <a href="{{ route('logout') }}" onclick="event.preventDefault(); document.getElementById('logout-form').submit();"

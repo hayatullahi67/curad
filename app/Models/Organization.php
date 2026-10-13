@@ -7,7 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 /** A pharmacy business. It owns one or more branches and one product catalogue. */
 class Organization extends Model
 {
-    protected $fillable = ['owner_id', 'name', 'phone', 'email'];
+    protected $fillable = ['owner_id', 'name', 'phone', 'email', 'closed_at'];
+
+    protected $casts = ['closed_at' => 'datetime'];
 
     public function owner() { return $this->belongsTo(User::class, 'owner_id'); }
     public function branches() { return $this->hasMany(Pharmacy::class)->orderByDesc('is_main')->orderBy('name'); }

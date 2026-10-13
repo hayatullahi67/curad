@@ -21,11 +21,11 @@
         @csrf
 
         <fieldset>
-            <legend class="mb-2 block text-sm font-semibold text-slate-800">I want to</legend>
-            <div class="grid grid-cols-2 gap-3">
+            <legend class="mb-2 block text-sm font-semibold text-slate-800">Who is this account for?</legend>
+            <div class="grid gap-3 sm:grid-cols-2">
                 @foreach ([
-                    ['patient', 'fa-bag-shopping', 'Shop', 'Buy medicines and health products'],
-                    ['vendor', 'fa-store', 'Sell', 'Register and run my pharmacy'],
+                    ['patient', 'fa-user', 'I am a customer', 'I want to buy medicines and health products.'],
+                    ['vendor', 'fa-store', 'I own a pharmacy', 'I want to register my pharmacy and sell on CuraD.'],
                 ] as [$value, $icon, $label, $hint])
                     <label class="relative cursor-pointer">
                         <input type="radio" name="account_type" value="{{ $value }}" class="peer sr-only" @checked($chosenType === $value)>

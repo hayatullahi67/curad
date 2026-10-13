@@ -249,6 +249,7 @@ Route::middleware(['auth', 'vendor.only'])->prefix('vendor')->group(function () 
     Route::get('/settings', [\App\Http\Controllers\Vendor\SettingsController::class, 'index'])->name('vendor.profile');
     Route::patch('/settings/account', [\App\Http\Controllers\Vendor\SettingsController::class, 'updateAccount'])->name('vendor.profile.update');
     Route::put('/settings/password', [\App\Http\Controllers\Vendor\SettingsController::class, 'updatePassword'])->name('vendor.profile.password');
+    Route::delete('/settings/account', [\App\Http\Controllers\Vendor\SettingsController::class, 'destroy'])->name('vendor.account.destroy');
     Route::patch('/settings/organization', [\App\Http\Controllers\Vendor\SettingsController::class, 'updateOrganization'])->name('vendor.organization.update');
     Route::redirect('/profile', '/vendor/settings');
     Route::post('/become-patient', [AuthController::class, 'becomePatient'])->name('vendor.become.patient');

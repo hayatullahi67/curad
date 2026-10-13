@@ -16,6 +16,8 @@
 
     <style>
         body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        /* "clip" stops sideways scrolling like "hidden" does, but lets the side panel stay in view while the form scrolls. */
+        html, body { overflow-x: clip; }
         .auth-input { width: 100%; border-radius: 0.75rem; border: 1px solid #cbd5e1; background: #fff; padding: 0.75rem 0.875rem; font-size: 15px; color: #0f172a; transition: border-color .15s, box-shadow .15s; }
         .auth-input::placeholder { color: #94a3b8; }
         .auth-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 4px #d1fae5; }
@@ -44,33 +46,39 @@
             <p class="text-center text-xs text-slate-400">&copy; {{ date('Y') }} CuraD</p>
         </div>
 
-        {{-- Brand side (large screens) --}}
-        <aside class="relative hidden overflow-hidden bg-slate-900 lg:flex lg:flex-col lg:justify-between lg:p-14">
-            <div class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-emerald-500/20 blur-3xl" aria-hidden="true"></div>
-            <div class="pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-emerald-600/20 blur-3xl" aria-hidden="true"></div>
+        {{-- Brand side (large screens). It stays in view while a long form scrolls beside it. --}}
+        <aside class="relative hidden bg-slate-900 lg:block">
+            <div class="sticky top-0 flex h-screen flex-col justify-center overflow-hidden p-12 xl:p-16" style="height: calc(var(--vh, 1vh) * 100)">
+                <div class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-emerald-500/20 blur-3xl" aria-hidden="true"></div>
+                <div class="pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-emerald-600/20 blur-3xl" aria-hidden="true"></div>
 
-            <div class="relative">
-                <p class="text-sm font-semibold text-emerald-400">@yield('aside_eyebrow', 'CuraD')</p>
-                <h2 class="mt-3 max-w-md text-3xl font-bold leading-tight tracking-tight text-white xl:text-4xl">@yield('aside_title', 'The pharmacy near you, on one page.')</h2>
+                <div class="relative max-w-md">
+                    <p class="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">@yield('aside_eyebrow', 'CuraD')</p>
+                    <h2 class="mt-5 text-3xl font-bold leading-tight tracking-tight text-white xl:text-4xl">@yield('aside_title', 'The pharmacy near you, on one page.')</h2>
+
+                    <ul class="mt-9 space-y-5 border-t border-white/10 pt-8">
+                        @hasSection('aside_points')
+                            @yield('aside_points')
+                        @else
+                            @foreach ([
+                                ['fa-magnifying-glass', 'Search once', 'Find a medicine or health product across every CuraD pharmacy.'],
+                                ['fa-tags', 'Compare prices', 'See who has it in stock and what each pharmacy charges.'],
+                                ['fa-cash-register', 'Run your pharmacy', 'POS, stock, staff and reports in the same system.'],
+                            ] as [$icon, $title, $text])
+                                <li class="flex gap-4">
+                                    <span class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400"><i class="fas {{ $icon }}"></i></span>
+                                    <span>
+                                        <span class="block font-semibold text-white">{{ $title }}</span>
+                                        <span class="mt-0.5 block text-sm leading-6 text-slate-400">{{ $text }}</span>
+                                    </span>
+                                </li>
+                            @endforeach
+                        @endif
+                    </ul>
+
+                    <p class="mt-9 flex items-center gap-2 text-sm text-slate-400"><i class="fas fa-lock text-emerald-400"></i>@yield('aside_note', 'Your password is stored encrypted. Nobody at CuraD can read it.')</p>
+                </div>
             </div>
-
-            <ul class="relative mt-10 space-y-5">
-                @foreach ([
-                    ['fa-magnifying-glass', 'Search once', 'Find a medicine or health product across every CuraD pharmacy.'],
-                    ['fa-tags', 'Compare prices', 'See who has it in stock and what each pharmacy charges.'],
-                    ['fa-cash-register', 'Run your pharmacy', 'POS, stock, staff and reports in the same system.'],
-                ] as [$icon, $title, $text])
-                    <li class="flex gap-4">
-                        <span class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400"><i class="fas {{ $icon }}"></i></span>
-                        <span>
-                            <span class="block font-semibold text-white">{{ $title }}</span>
-                            <span class="mt-0.5 block text-sm leading-6 text-slate-400">{{ $text }}</span>
-                        </span>
-                    </li>
-                @endforeach
-            </ul>
-
-            <p class="relative mt-10 flex items-center gap-2 text-sm text-slate-400"><i class="fas fa-lock text-emerald-400"></i>Your password is stored encrypted. Nobody at CuraD can read it.</p>
         </aside>
     </div>
 

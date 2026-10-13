@@ -3,6 +3,25 @@
 @section('title', 'Set up your pharmacy')
 @section('aside_eyebrow', 'Last step')
 @section('aside_title', 'Tell us where your pharmacy is, and you can start selling.')
+@section('aside_points')
+    @foreach ([
+        ['done', 'Create your account', 'Done.'],
+        ['now', 'Set up your pharmacy', 'Its name, a phone number and where it is.'],
+        ['next', 'Add your products', 'Receive your stock and choose what to list.'],
+        ['next', 'Start selling', 'At the counter with the POS, and online on the marketplace.'],
+    ] as $index => [$state, $title, $text])
+        <li class="flex gap-4">
+            <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold {{ $state === 'done' ? 'bg-emerald-500 text-white' : ($state === 'now' ? 'bg-white text-slate-900 ring-4 ring-emerald-500/30' : 'bg-white/10 text-slate-400') }}">
+                @if ($state === 'done')<i class="fas fa-check text-xs"></i>@else{{ $index + 1 }}@endif
+            </span>
+            <span class="min-w-0">
+                <span class="block font-semibold {{ $state === 'next' ? 'text-slate-300' : 'text-white' }}">{{ $title }}@if ($state === 'now')<span class="ml-2 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">You are here</span>@endif</span>
+                <span class="mt-0.5 block text-sm leading-6 text-slate-400">{{ $text }}</span>
+            </span>
+        </li>
+    @endforeach
+@endsection
+@section('aside_note', 'Your pharmacy details can be changed later in Settings.')
 
 @php
     $field = 'auth-input';
@@ -47,7 +66,8 @@
 
         <div>
             <label for="address" class="mb-1.5 block text-sm font-semibold text-slate-800">Street address</label>
-            <input id="address" type="text" name="address" value="{{ old('address') }}" required maxlength="500" placeholder="House number, street and area" data-place="address" class="{{ $field }} @error('address') has-error @enderror">
+            <input id="address" type="text" name="address" value="{{ old('address') }}" required maxlength="500" placeholder="Start typing, then pick it from the list" data-place="address" data-address-suggest data-fill="address" data-latitude="[data-latitude]" data-longitude="[data-longitude]" data-city="[data-place=city]" data-state="[data-place=state]" class="{{ $field }} @error('address') has-error @enderror">
+            <p class="mt-1.5 text-xs leading-5 text-slate-500">Add the house number if the list does not show it.</p>
         </div>
 
         <div class="grid gap-5 sm:grid-cols-2">

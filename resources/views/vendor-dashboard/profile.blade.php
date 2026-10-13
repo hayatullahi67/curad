@@ -20,7 +20,10 @@
         $isOwner ? ['branches', 'fa-store', 'Branches'] : null,
         ['account', 'fa-user', 'My account'],
         ['password', 'fa-lock', 'Password'],
+        $isOwner ? ['delete', 'fa-trash-can', 'Delete account'] : null,
     ]);
+    $deleteFailed = $errors->getBag('delete')->any();
+    $blocked = $isOwner && ($deletion['open_orders'] || $deletion['own_orders']);
 @endphp
 
 @section('content')
@@ -234,13 +237,112 @@
                     </footer>
                 </form>
             </section>
+
+            @if ($isOwner)
+                {{-- ============ Delete account (owner only) ============ --}}
+                <section id="delete" data-settings-section class="scroll-mt-24 overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm">
+                    <header class="flex items-start gap-3 border-b border-rose-100 bg-rose-50/60 p-4 sm:p-6">
+                        <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600"><i class="fas fa-triangle-exclamation"></i></span>
+                        <div class="min-w-0">
+                            <h2 class="text-base font-bold text-slate-900">Delete account</h2>
+                            <p class="mt-0.5 text-sm leading-6 text-slate-600">Closes {{ $organization->name }} on CuraD for good. This cannot be undone.</p>
+                        </div>
+                    </header>
+
+                    <div class="p-4 sm:p-6">
+                        <p class="text-sm font-semibold text-slate-900">If you delete your account:</p>
+                        <ul class="mt-3 space-y-2.5 text-sm leading-6 text-slate-600">
+                            <li class="flex gap-2.5"><i class="fas fa-store mt-1 w-4 flex-shrink-0 text-center text-xs text-rose-500"></i><span>{{ $deletion['branches'] === 1 ? 'Your branch leaves' : 'All ' . $deletion['branches'] . ' of your branches leave' }} the marketplace, with {{ number_format($deletion['products']) }} {{ Str::plural('product', $deletion['products']) }}. Customers can no longer order from you.</span></li>
+                            <li class="flex gap-2.5"><i class="fas fa-user-slash mt-1 w-4 flex-shrink-0 text-center text-xs text-rose-500"></i><span>{{ $deletion['staff'] === 0 ? 'No staff accounts are affected.' : ($deletion['staff'] === 1 ? 'Your 1 staff account is switched off and signed out.' : 'Your ' . $deletion['staff'] . ' staff accounts are switched off and signed out.') }}</span></li>
+                            <li class="flex gap-2.5"><i class="fas fa-user-xmark mt-1 w-4 flex-shrink-0 text-center text-xs text-rose-500"></i><span>Your sign-in, name, phone and address are removed. You can register again later with the same email.</span></li>
+                            <li class="flex gap-2.5"><i class="fas fa-file-invoice mt-1 w-4 flex-shrink-0 text-center text-xs text-slate-400"></i><span>Sales, orders and the activity log are kept, because they are your business’s financial record.</span></li>
+                            @if ($deletion['wallet'] > 0)
+                                <li class="flex gap-2.5"><i class="fas fa-wallet mt-1 w-4 flex-shrink-0 text-center text-xs text-amber-500"></i><span class="text-amber-800">You still have <span class="font-semibold">₦{{ number_format($deletion['wallet'], 2) }}</span> in your wallet. Contact CuraD support to collect it before you delete the account.</span></li>
+                            @endif
+                        </ul>
+
+                        @if ($blocked)
+                            <div class="mt-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm leading-6 text-amber-900">
+                                <i class="fas fa-circle-info mt-1 text-amber-600"></i>
+                                <div class="min-w-0">
+                                    <p class="font-semibold">You cannot delete the account yet.</p>
+                                    <ul class="mt-1 space-y-1">
+                                        @if ($deletion['open_orders'])
+                                            <li>{{ $deletion['open_orders'] }} online {{ Str::plural('order', $deletion['open_orders']) }} {{ $deletion['open_orders'] === 1 ? 'is' : 'are' }} still in progress at your branches. <a href="{{ route('vendor.orders') }}" class="font-semibold underline">Finish or reject {{ $deletion['open_orders'] === 1 ? 'it' : 'them' }}</a> first.</li>
+                                        @endif
+                                        @if ($deletion['own_orders'])
+                                            <li>{{ $deletion['own_orders'] }} {{ Str::plural('order', $deletion['own_orders']) }} you placed as a customer {{ $deletion['own_orders'] === 1 ? 'is' : 'are' }} still on the way.</li>
+                                        @endif
+                                    </ul>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+
+                    <footer class="flex justify-end border-t border-rose-100 bg-rose-50/40 px-4 py-3 sm:px-6">
+                        <button type="button" data-cura-modal-open="delete-account-modal" @disabled($blocked)
+                            class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-5 text-sm font-semibold text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto">
+                            <i class="fas fa-trash-can text-xs"></i> Delete my account
+                        </button>
+                    </footer>
+                </section>
+            @endif
         </div>
     </div>
 </div>
+
+@if ($isOwner && ! $blocked)
+    {{-- The last check before deleting: the business name, typed out, and the password. --}}
+    <x-modal id="delete-account-modal" title="Delete your account?" max-width="md">
+        <form action="{{ route('vendor.account.destroy') }}" method="POST" id="delete-account-form" novalidate>
+            @csrf
+            @method('DELETE')
+            <div class="flex items-start gap-3 rounded-xl bg-rose-50 p-3.5 text-sm leading-6 text-rose-900">
+                <i class="fas fa-triangle-exclamation mt-1 text-rose-600"></i>
+                <p>This closes <span class="font-semibold">{{ $organization->name }}</span>, takes {{ $deletion['branches'] === 1 ? 'its branch' : 'its ' . $deletion['branches'] . ' branches' }} off the marketplace and signs out {{ $deletion['staff'] ?: 'no' }} staff. It cannot be undone.</p>
+            </div>
+
+            <label for="delete-confirm-name" class="{{ $label }} mt-5">Type <span class="select-all rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[13px] text-slate-900">{{ $organization->name }}</span> to confirm</label>
+            <input id="delete-confirm-name" type="text" name="confirm_name" value="{{ $deleteFailed ? old('confirm_name') : '' }}" required autocomplete="off" autocapitalize="off" spellcheck="false" data-expected="{{ $organization->name }}"
+                class="{{ $field }} {{ $errors->delete->has('confirm_name') ? $fieldBad : 'border-slate-300 focus:border-rose-500 focus:ring-rose-100' }}">
+            @if ($errors->delete->has('confirm_name'))<p class="mt-1.5 text-sm text-rose-600">{{ $errors->delete->first('confirm_name') }}</p>@endif
+
+            <label for="delete-password" class="{{ $label }} mt-4">Your password</label>
+            <input id="delete-password" type="password" name="current_password" required autocomplete="current-password"
+                class="{{ $field }} {{ $errors->delete->has('current_password') ? $fieldBad : 'border-slate-300 focus:border-rose-500 focus:ring-rose-100' }}">
+            @if ($errors->delete->has('current_password'))<p class="mt-1.5 text-sm text-rose-600">{{ $errors->delete->first('current_password') }}</p>@endif
+        </form>
+        <x-slot:footer>
+            <div class="flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
+                <button type="button" data-cura-modal-close class="h-11 rounded-xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 transition hover:border-slate-300">Keep my account</button>
+                <button type="submit" form="delete-account-form" id="delete-account-submit" disabled class="h-11 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-rose-300">Delete account for good</button>
+            </div>
+        </x-slot:footer>
+    </x-modal>
+@endif
 @endsection
 
 @push('scripts')
 <script>
+    // Delete account: the final button only works once the business name is typed exactly and a password is given.
+    (() => {
+        const form = document.getElementById('delete-account-form');
+        if (!form) return;
+
+        const name = document.getElementById('delete-confirm-name');
+        const password = document.getElementById('delete-password');
+        const submit = document.getElementById('delete-account-submit');
+        const ready = () => { submit.disabled = name.value.trim().toLowerCase() !== name.dataset.expected.trim().toLowerCase() || password.value === ''; };
+
+        [name, password].forEach(input => input.addEventListener('input', ready));
+        form.addEventListener('submit', () => { submit.disabled = true; submit.textContent = 'Deleting…'; });
+        ready();
+
+        @if ($deleteFailed)
+            document.addEventListener('DOMContentLoaded', () => CuraModal.open('delete-account-modal'));
+        @endif
+    })();
+
     (() => {
         // One click is enough: the button waits while the form is sent.
         document.querySelectorAll('[data-settings-form]').forEach(form => {

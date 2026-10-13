@@ -19,7 +19,7 @@
         const CREDITS = { geoapify: 'Geoapify', locationiq: 'LocationIQ', photon: 'Photon' };
 
         document.querySelectorAll('[data-address-suggest]').forEach((box, index) => {
-            const find = selector => selector ? document.querySelector(selector) : null;
+            const find = selector => selector ? ((box.form && box.form.querySelector(selector)) || document.querySelector(selector)) : null;
             const latitude = find(box.dataset.latitude);
             const longitude = find(box.dataset.longitude);
             const listId = 'address-suggestions-' + index;
